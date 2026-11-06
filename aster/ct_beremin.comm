@@ -1,0 +1,149 @@
+# Etape 3 : CT elastoplastique en grandes deformations, pointe emoussee. Unites : N, mm, MPa.
+import json
+
+import numpy as np
+
+DEBUT(LANG="FR")
+
+with open("fort.30") as handle:
+    PARAMS = json.load(handle)
+
+MA = LIRE_MAILLAGE(FORMAT="ASTER", UNITE=20)
+MA = DEFI_GROUP(
+    reuse=MA,
+    MAILLAGE=MA,
+    CREA_GROUP_NO=_F(GROUP_MA=("LIGAMENT", "TROU_HAUT")),
+)
+MO = AFFE_MODELE(
+    MAILLAGE=MA,
+    AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION=PARAMS["modelisation"]),
+)
+COURBE = [value for point in PARAMS["courbe"] for value in point]
+TRAC = DEFI_FONCTION(
+    NOM_PARA="EPSI", NOM_RESU="SIGM", VALE=COURBE, PROL_DROITE="CONSTANT", PROL_GAUCHE="EXCLU",
+)
+ACIER = DEFI_MATERIAU(ELAS=_F(E=PARAMS["E"], NU=PARAMS["nu"]), TRACTION=_F(SIGM=TRAC))
+CM = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=ACIER))
+
+APPUIS = AFFE_CHAR_MECA(
+    MODELE=MO,
+    DDL_IMPO=(_F(GROUP_MA="LIGAMENT", DY=0.0), _F(GROUP_NO="BLOC_X", DX=0.0)),
+)
+EFFORT = AFFE_CHAR_MECA(
+    MODELE=MO,
+    FORCE_CONTOUR=_F(GROUP_MA="TROU_HAUT", FY=PARAMS["traction_unitaire"]),
+)
+RAMPE = DEFI_FONCTION(NOM_PARA="INST", VALE=(0.0, 0.0, 1.0, 1.0), PROL_DROITE="LINEAIRE")
+L_REEL = DEFI_LIST_REEL(VALE=PARAMS["instants"])
+L_INST = DEFI_LIST_INST(
+    DEFI_LIST=_F(LIST_INST=L_REEL),
+    ECHEC=_F(ACTION="DECOUPE", SUBD_METHODE="MANUEL", SUBD_PAS=4, SUBD_NIVEAU=PARAMS["subd_niveau"]),
+)
+
+COMMUN = dict(
+    MODELE=MO,
+    CHAM_MATER=CM,
+    EXCIT=(_F(CHARGE=APPUIS), _F(CHARGE=EFFORT, FONC_MULT=RAMPE)),
+    COMPORTEMENT=_F(RELATION="VMIS_ISOT_TRAC", DEFORMATION="GDEF_LOG", ITER_INTE_MAXI=200),
+    NEWTON=_F(REAC_INCR=1, REAC_ITER=1, MATRICE="TANGENTE", PREDICTION="TANGENTE"),
+    CONVERGENCE=_F(RESI_GLOB_RELA=1.0e-6, ITER_GLOB_MAXI=40),
+    ARCHIVAGE=_F(LIST_INST=L_REEL),
+)
+
+# Un appel par pas de chargement : si un pas echoue, les pas deja converges restent exploitables.
+ECHEC_PAS = None
+RES = STAT_NON_LINE(INCREMENT=_F(LIST_INST=L_INST, INST_FIN=PARAMS["instants"][1]), **COMMUN)
+for instant in PARAMS["instants"][2:]:
+    try:
+        RES = STAT_NON_LINE(
+            reuse=RES,
+            ETAT_INIT=_F(EVOL_NOLI=RES),
+            INCREMENT=_F(LIST_INST=L_INST, INST_FIN=instant),
+            **COMMUN,
+        )
+    except Exception as erreur:
+        ECHEC_PAS = {"instant": instant, "erreur": type(erreur).__name__}
+        break
+print("ETAT_CALCUL", ECHEC_PAS)
+with open("fort.51", "w") as handle:
+    json.dump({"echec": ECHEC_PAS}, handle)
+
+RES = CALC_CHAMP(reuse=RES, RESULTAT=RES, FORCE="REAC_NODA")
+
+FORMAT = dict(FORMAT="TABLEAU", FORMAT_R="E17.10")
+
+REAC = POST_RELEVE_T(
+    ACTION=_F(INTITULE="REACTION", OPERATION="EXTRACTION", GROUP_NO="LIGAMENT", RESULTAT=RES,
+              NOM_CHAM="REAC_NODA", RESULTANTE="DY", TOUT_ORDRE="OUI")
+)
+IMPR_TABLE(TABLE=REAC, UNITE=38, **FORMAT)
+DEPL_ARC = POST_RELEVE_T(
+    ACTION=_F(INTITULE="ARC", OPERATION="EXTRACTION", GROUP_NO="TROU_HAUT", RESULTAT=RES,
+              NOM_CHAM="DEPL", NOM_CMP="DY", TOUT_ORDRE="OUI")
+)
+IMPR_TABLE(TABLE=DEPL_ARC, UNITE=41, **FORMAT)
+
+# Champs aux points de Gauss pour le post-traitement Python.
+# Variables internes de VMIS_ISOT_TRAC en GDEF_LOG : V1 = p, V2 = indicateur plastique, V3 a V6 = T (Kirchhoff).
+def lire(champ, composantes):
+    """Renvoie (cle maille/point, dictionnaire composante -> valeurs), sans supposer l'ordre des lignes."""
+    valeurs, (mailles, cmps, points, _sous_points) = champ.getValuesWithDescription(composantes, ["SOLIDE"])
+    valeurs, mailles, points = np.array(valeurs), np.array(mailles), np.array(points)
+    cmps = np.array(cmps)
+    sortie, cles = {}, None
+    for nom in composantes:
+        choix = cmps == nom
+        cle = mailles[choix] * 1000 + points[choix]
+        ordre = np.argsort(cle)
+        if cles is not None and not np.array_equal(cles, cle[ordre]):
+            raise ValueError("Points de Gauss differents selon la composante " + nom)
+        cles = cle[ordre]
+        sortie[nom] = valeurs[choix][ordre]
+    return cles, sortie
+
+
+COOR = CALC_CHAM_ELEM(MODELE=MO, OPTION="COOR_ELGA").toSimpleFieldOnCells()
+ORDRES = list(RES.getAccessParameters()["NUME_ORDRE"])
+INSTANTS = list(RES.getAccessParameters()["INST"])
+CLES, GEOM = lire(COOR, ["X", "Y", "W"])
+NOMS = ["V1", "V2", "V3", "V4", "V5", "V6"]
+CLES_VAR, FINAL = lire(RES.getField("VARI_ELGA", ORDRES[-1]).toSimpleFieldOnCells(), NOMS)
+if not np.array_equal(CLES, CLES_VAR):
+    raise ValueError("Points de Gauss differents entre COOR_ELGA et VARI_ELGA")
+# Seuls les points qui ont plastifie comptent dans l'integrale de Beremin.
+GARDE = FINAL["V1"] > 0.0
+HISTOIRE = {nom: [] for nom in NOMS}
+for ordre in ORDRES:
+    _cles, champ = lire(RES.getField("VARI_ELGA", ordre).toSimpleFieldOnCells(), NOMS)
+    for nom in NOMS:
+        HISTOIRE[nom].append(champ[nom][GARDE])
+# Contraintes de Cauchy au dernier pas, pour controler la lecture des variables internes.
+CLES_SIG, SIEF = lire(RES.getField("SIEF_ELGA", ORDRES[-1]).toSimpleFieldOnCells(), ["SIXX", "SIYY", "SIZZ", "SIXY"])
+if not np.array_equal(CLES, CLES_SIG):
+    raise ValueError("Points de Gauss differents entre COOR_ELGA et SIEF_ELGA")
+with open("fort.50", "wb") as handle:
+    np.savez_compressed(
+        handle,
+        ordres=np.array(ORDRES),
+        instants=np.array(INSTANTS),
+        cles=CLES[GARDE],
+        x=GEOM["X"][GARDE],
+        y=GEOM["Y"][GARDE],
+        w=GEOM["W"][GARDE],
+        **{nom: np.array(HISTOIRE[nom]) for nom in NOMS},
+        **{nom: SIEF[nom][GARDE] for nom in SIEF},
+    )
+
+BERE = POST_BEREMIN(
+    RESULTAT=RES,
+    DEFORMATION="GDEF_LOG",
+    FILTRE_SIGM="SIGM_ELGA",
+    NUME_VARI=2,
+    LIST_NUME_SIEF=(3, 4, 5, 6),
+    HIST_MAXI="OUI",
+    COEF_MULT=PARAMS["coef_mult"],
+    WEIBULL=_F(GROUP_MA="SOLIDE", M=PARAMS["m"], VOLU_REFE=PARAMS["v0"], SIGM_REFE=PARAMS["sigma_u"]),
+)
+IMPR_TABLE(TABLE=BERE, UNITE=44, **FORMAT)
+
+FIN()

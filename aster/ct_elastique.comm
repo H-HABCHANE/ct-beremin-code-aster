@@ -1,0 +1,71 @@
+# Etape 1 : CT en elasticite lineaire, deformations planes. Unites : N, mm, MPa.
+import json
+
+DEBUT(LANG="FR")
+
+# Les fichiers de donnees ne sont lies au repertoire de travail qu'apres DEBUT.
+with open("fort.30") as handle:
+    PARAMS = json.load(handle)
+
+MA = LIRE_MAILLAGE(FORMAT="ASTER", UNITE=20)
+MA = DEFI_GROUP(
+    reuse=MA,
+    MAILLAGE=MA,
+    CREA_GROUP_NO=_F(GROUP_MA=("LIGAMENT", "LEVRE", "TROU_HAUT")),
+)
+MO = AFFE_MODELE(
+    MAILLAGE=MA,
+    AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="D_PLAN"),
+)
+ACIER = DEFI_MATERIAU(ELAS=_F(E=PARAMS["E"], NU=PARAMS["nu"]))
+CM = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=ACIER))
+APPUIS = (_F(GROUP_MA="LIGAMENT", DY=0.0), _F(GROUP_NO="BLOC_X", DX=0.0))
+if PARAMS["chargement"] == "arc":
+    # Effort vertical uniforme par unite de longueur d'arc sur le demi-trou superieur.
+    CHARGE = AFFE_CHAR_MECA(
+        MODELE=MO,
+        DDL_IMPO=APPUIS,
+        FORCE_CONTOUR=_F(GROUP_MA="TROU_HAUT", FY=PARAMS["traction"]),
+    )
+else:
+    # Variante de sensibilite : effort ponctuel au sommet du trou.
+    CHARGE = AFFE_CHAR_MECA(
+        MODELE=MO,
+        DDL_IMPO=APPUIS,
+        FORCE_NODALE=_F(GROUP_NO="SOMMET_TROU", FY=PARAMS["p_sur_b"]),
+    )
+RES = MECA_STATIQUE(MODELE=MO, CHAM_MATER=CM, EXCIT=_F(CHARGE=CHARGE))
+RES = CALC_CHAMP(reuse=RES, RESULTAT=RES, FORCE="REAC_NODA")
+
+REAC = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="REACTION",
+        OPERATION="EXTRACTION",
+        GROUP_NO="LIGAMENT",
+        RESULTAT=RES,
+        NOM_CHAM="REAC_NODA",
+        RESULTANTE="DY",
+        INST=0.0,
+    )
+)
+IMPR_TABLE(TABLE=REAC, UNITE=38, FORMAT="TABLEAU", FORMAT_R="E17.10")
+
+FOND = DEFI_FOND_FISS(
+    MAILLAGE=MA,
+    SYME="OUI",
+    FOND_FISS=_F(GROUP_NO="POINTE"),
+    LEVRE_SUP=_F(GROUP_MA="LEVRE"),
+)
+for r_inf, r_sup in PARAMS["contours"]:
+    TG = CALC_G(
+        THETA=_F(FISSURE=FOND, R_INF=r_inf, R_SUP=r_sup),
+        RESULTAT=RES,
+        OPTION=("G", "K"),
+    )
+    IMPR_TABLE(TABLE=TG, UNITE=39, FORMAT="TABLEAU", FORMAT_R="E17.10")
+    DETRUIRE(NOM=TG)
+
+ENER = POST_ELEM(ENER_ELAS=_F(TOUT="OUI"), RESULTAT=RES, NUME_ORDRE=1)
+IMPR_TABLE(TABLE=ENER, UNITE=40, FORMAT="TABLEAU", FORMAT_R="E17.10")
+
+FIN()
