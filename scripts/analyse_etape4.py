@@ -109,7 +109,7 @@ def main() -> None:
 
     epaisseurs = []
     table = CAS["CT W=50, a/W=0,5 (référence)"][1]
-    k_min = 20.0  # MPa.sqrt(m), correction d'epaisseur de la Master Curve (ASTM E1921, a verifier)
+    k_min = 20.0  # MPa.sqrt(m), correction d'epaisseur de la Master Curve (ASTM E1921)
     for b in (6.25, 12.5, 25.0, 50.0, 100.0):
         d = charge("r0_5um", table, COEF_MULT * b / EPAISSEUR)
         k50 = k_au_niveau(d, 0.5)

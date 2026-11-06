@@ -1,6 +1,6 @@
 # Éprouvette CT : de K_J au modèle de Beremin avec Code_Aster
 
-Projet personnel en cours. Objectif : calculer le comportement à rupture d'une éprouvette CT par
+Projet personnel, réalisé avec l'aide d'un assistant IA (Claude) pour le code et les calculs. Objectif : calculer le comportement à rupture d'une éprouvette CT par
 éléments finis, puis comparer l'approche historique (K, J) au modèle de Beremin (contrainte de Weibull).
 
 | Étape | Contenu | État |
@@ -50,7 +50,7 @@ Cette étape vérifie la chaîne de calcul : elle ne dit encore rien sur la rupt
 
 Même demi-éprouvette, à −100 °C, en petites déformations, avec une plasticité de Von Mises à écrouissage
 isotrope (`VMIS_ISOT_TRAC`). Effort imposé par pas de 100 N/mm jusqu'à P/B = 3000 N/mm, soit environ 85 % de
-la charge limite estimée. La provenance de chaque paramètre et les valeurs lues sur des courbes sont
+la charge limite donnée par la formule EPRI. La provenance de chaque paramètre et les valeurs lues sur des courbes sont
 détaillées dans [`docs/donnees_materiau.md`](docs/donnees_materiau.md).
 
 ![Résultats de l'étape 2](results/etape2/resultats.png)
@@ -96,9 +96,11 @@ couronnes de 0,25 mm.
 - **Contraintes en pointe :** le pic de contrainte d'ouverture ne converge pas avec le maillage sur une fissure
   vive (de 2333 à 2735 MPa quand h passe de 0,1 à 0,025 mm). Ce modèle ne convient donc pas pour la contrainte de
   Weibull : l'étape 3 demande une pointe émoussée et des grandes déformations.
-- **Formules à vérifier :** le facteur η_pl = 2 + 0,522 b0/W (ASTM E1820) et la charge limite
-  P0 = 1,455 α b σ0 (Kumar, German et Shih, 1981) ont été écrits de mémoire. Je n'ai pas pu les vérifier dans les
-  textes originaux. L'accord avec `CALC_G` est encourageant, mais il ne constitue pas cette vérification.
+- **Facteur η_pl :** la valeur 2 + 0,522 b0/W (ASTM E1820) a été écrite de mémoire et reste à vérifier. L'accord
+  avec `CALC_G` est encourageant, mais il ne constitue pas cette vérification.
+- **Charge limite :** la formule EPRI donne P0 = 3524 N/mm, mais un calcul parfaitement plastique
+  (`scripts/charge_limite.py`) perd la convergence vers 3880 N/mm, soit environ 10 % de plus. P/B = 3000 N/mm vaut
+  donc 85 % de la formule, mais environ 77 % de la charge limite calculée.
 
 ## Étape 3 : modèle de Beremin
 
@@ -218,7 +220,7 @@ utilisée, ce qui compense en partie son effet.
 | 100 | 64,4 | 66,9 | 86,3 |
 
 K_J à Pr = 50 %, en MPa√m. Beremin reproduit un effet d'épaisseur proche de la correction empirique
-K = 20 + (K₀ − 20)(B₀/B)^(1/4), écrite de mémoire d'après ASTM E1921 et à vérifier. Cet effet est calculé par simple
+K = 20 + (K₀ − 20)(B₀/B)^(1/4) d'ASTM E1921, confirmée par un article qui la cite (Li et al., 2023). Cet effet est calculé par simple
 proportionnalité à B en 2D : il ne tient pas compte de l'état de contrainte réel près des bords de l'éprouvette.
 
 ### Synthèse
@@ -263,6 +265,7 @@ python3 -m venv .venv
 .venv/bin/python scripts/run_etape4.py                # environ 40 minutes
 .venv/bin/python scripts/analyse_etape4.py
 .venv/bin/python scripts/plot_etape4.py
+.venv/bin/python scripts/charge_limite.py             # environ 5 minutes
 ```
 
 ## Références

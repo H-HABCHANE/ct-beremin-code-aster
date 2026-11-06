@@ -80,7 +80,15 @@ Choix retenus à l'étape 3 :
   (loi en K⁴ en plasticité confinée, équation 4).
 - C. Bouchet, B. Tanguy, J. Besson, A. Pineau, S. Bugat, *Transferability of cleavage fracture parameters between
   notched and cracked geometry*, ECF 16, 2006.
-- S. R. Bordet et al., article sur la rupture par clivage de l'acier de cuve 18MND5, Fatigue & Fracture of
-  Engineering Materials & Structures, 2006. **Titre exact et pages à vérifier avant de citer.**
-- ASTM E1820 (facteur η_pl) et V. Kumar, M. D. German, C. F. Shih, rapport EPRI NP-1931, 1981 (charge limite) :
-  **formules citées de mémoire, à vérifier dans les textes originaux.**
+- S. R. Bordet, B. Tanguy, J. Besson, S. Bugat, D. Moinereau, A. Pineau, *Cleavage fracture of RPV steel following
+  warm pre-stressing: micromechanical analysis and interpretation through a new model*, Fatigue & Fracture of
+  Engineering Materials & Structures, 2006, doi:10.1111/j.1460-2695.2006.01032.x.
+
+## Formules vérifiées
+
+| Formule | Usage ici | État | Source |
+|---|---|---|---|
+| Charge limite P0 = 1,455 η c σ0, avec η = [(2a/c)² + 2(2a/c) + 2]^½ − (2a/c + 1) | Normaliser la charge | **Confirmée** dans la section sur l'éprouvette CT (éq. 3-6 et 3-8) | V. Kumar, M. D. German, C. F. Shih, rapport EPRI NP-1931, 1981, <https://www.osti.gov/servlets/purl/6068291> |
+| Correction d'épaisseur K(x) = 20 + (K(0) − 20)(B0/Bx)^(1/4) | Comparaison de l'étape 4 | **Confirmée** par un article qui cite ASTM E1921 | Li, Chaouadi, Uytdenhouwen, Pardoen, Engineering Fracture Mechanics 290 (2023) 109486 |
+| J_pl = η A_pl / (B b) | Contrôle de J par l'aire P–δ | **Forme confirmée** | K. Shi, L. Cai, C. Bao, ICF13, 2013 |
+| η_pl = 2 + 0,522 b0/W pour une CT | Contrôle de J par l'aire P–δ | **Coefficient non confirmé** : écrit de mémoire, à vérifier dans une copie légale d'ASTM E1820 | |
